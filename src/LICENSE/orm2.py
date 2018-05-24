@@ -1,8 +1,9 @@
-# -*- coding:utf-8 -*-
-# author: innowa
+# -*- coding: utf-8 -*-
 
-import logging
-import asyncio
+__author__ = 'Michael Liao'
+
+import asyncio, logging
+
 import aiomysql
 
 
@@ -15,9 +16,9 @@ async def create_pool(loop, **kw):
     global __pool
     __pool = await aiomysql.create_pool(
         host=kw.get('host', 'localhost'),
-        port=kw.get('port', '3306'),
-        user=kw['root'],
-        password=kw['123456'],
+        port=kw.get('port', 3306),
+        user=kw['user'],
+        password=kw['password'],
         db=kw['db'],
         charset=kw.get('charset', 'utf8'),
         autocommit=kw.get('autocommit', True),
@@ -48,10 +49,10 @@ async def execute(sql, args, autocommit=True):
             await conn.begin()
         try:
             async with conn.cursor(aiomysql.DictCursor) as cur:
-                await cur.excute(sql.replace('?', '%s'), args)
+                await cur.execute(sql.replace('?', '%s'), args)
                 affected = cur.rowcount
             if not autocommit:
-                await cur.commit()
+                await conn.commit()
         except BaseException as e:
             if not autocommit:
                 await conn.rollback()
@@ -60,10 +61,10 @@ async def execute(sql, args, autocommit=True):
 
 
 def create_args_string(num):
-    l = []
+    L = []
     for n in range(num):
-        l.append('?')
-    return ','.join(l)
+        L.append('?')
+    return ', '.join(L)
 
 
 class Field(object):
@@ -111,7 +112,7 @@ class TextField(Field):
 class ModelMetaclass(type):
 
     def __new__(cls, name, bases, attrs):
-        if name == 'BaseModel':
+        if name == 'Model':
             return type.__new__(cls, name, bases, attrs)
         tableName = attrs.get('__table__', None) or name
         logging.info('found model: %s (table: %s)' % (name, tableName))
@@ -140,17 +141,17 @@ class ModelMetaclass(type):
         attrs['__fields__'] = fields  # 除主键外的属性名
         attrs['__select__'] = 'select `%s`, %s from `%s`' % (primaryKey, ', '.join(escaped_fields), tableName)
         attrs['__insert__'] = 'insert into `%s` (%s, `%s`) values (%s)' % (
-            tableName, ', '.join(escaped_fields), primaryKey, create_args_string(len(escaped_fields) + 1))
+        tableName, ', '.join(escaped_fields), primaryKey, create_args_string(len(escaped_fields) + 1))
         attrs['__update__'] = 'update `%s` set %s where `%s`=?' % (
-            tableName, ', '.join(map(lambda f: '`%s`=?' % (mappings.get(f).name or f), fields)), primaryKey)
+        tableName, ', '.join(map(lambda f: '`%s`=?' % (mappings.get(f).name or f), fields)), primaryKey)
         attrs['__delete__'] = 'delete from `%s` where `%s`=?' % (tableName, primaryKey)
         return type.__new__(cls, name, bases, attrs)
 
 
-class BaseModel(dict, metaclass=ModelMetaclass):
+class Model(dict, metaclass=ModelMetaclass):
 
     def __init__(self, **kw):
-        super(BaseModel, self).__init__(**kw)
+        super(Model, self).__init__(**kw)
 
     def __getattr__(self, key):
         try:
